@@ -116,6 +116,12 @@ export const fitMapToNavbar = (scene: MapScene, container: HTMLElement) => {
     const navbar = document.querySelector('.navbar')
     const navbarHeight = navbar instanceof HTMLElement ? navbar.offsetHeight : 0
     container.style.height = `${window.innerHeight - navbarHeight}px`
+    // Navara's attribution UI is fixed to the viewport rather than to the map,
+    // so it needs the navbar height as well — see `style.scss`.
+    document.documentElement.style.setProperty(
+      '--player-navbar-height',
+      `${navbarHeight}px`,
+    )
     scene.view.resize()
   }
 

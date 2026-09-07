@@ -27,6 +27,16 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* That UI is docked to the bottom of the *viewport* with `position: fixed`, so
+   the fixed-bottom player navbar covers it. Lift it clear of the navbar, whose
+   height `fitMapToNavbar` publishes because the controls wrap on narrow
+   screens. This reaches into the plugin's own class and needs `!important`:
+   the plugin injects its stylesheet when the view initializes, after this one,
+   so an equally specific rule of ours would lose. */
+.navara-attr-dock {
+  bottom: calc(var(--player-navbar-height, 0px) + 8px) !important;
+}
+
 .marquee-container {
   width: 100%;
   overflow: hidden;

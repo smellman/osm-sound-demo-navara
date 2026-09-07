@@ -67,6 +67,11 @@ pnpm preview
   rather than only the towers swinging.
 - With nothing playing, the buildings stand at their real heights and the
   engine only redraws on change; playback switches on continuous rendering.
+- The basemap credits come from the TileJSON's `attribution` field, which
+  `TileJsonPlugin` hands to Navara's built-in attribution UI — nothing is
+  declared by hand. That UI docks itself to the bottom of the *viewport*, where
+  the fixed-bottom player navbar would cover it, so `style.scss` lifts it by
+  the navbar height that `fitMapToNavbar` publishes as a CSS variable.
 - `.claude/skills/navara-usage/` is a copy of the
   [navara-usage skill](https://github.com/maplibre/navara/tree/main/skills/navara-usage)
   from the Navara repository, for AI coding agents working on this project.

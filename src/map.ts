@@ -95,6 +95,21 @@ const PALETTE = {
   building: '#7c7c8a',
 } as const
 
+/**
+ * Colours for Navara's built-in attribution UI, so its popover matches the
+ * demo's dark Bootstrap theme instead of its own light default. The credits
+ * themselves come from the TileJSON, via `TileJsonPlugin`.
+ */
+const ATTRIBUTION_STYLE = {
+  backgroundColor: 'rgba(33, 37, 41, 0.9)',
+  titleColor: '#dee2e6',
+  textColor: '#adb5bd',
+  nestedTextColor: '#8c949c',
+  linkColor: '#6ea8fe',
+  listStyleColor: '#6c757d',
+  borderColor: 'rgba(255, 255, 255, 0.15)',
+} as const
+
 /** Fallback block height for buildings the data has no height for. */
 export const MIN_BUILDING_HEIGHT = 3
 
@@ -158,6 +173,7 @@ export const createMapScene = async (
   const view = new ThreeView<DefaultDescriptions>({
     container,
     backgroundColor: color(PALETTE.background),
+    defaultAttribution: { style: ATTRIBUTION_STYLE },
   })
 
   // Every plugin has to be registered before init() — addPlugin() throws after.
