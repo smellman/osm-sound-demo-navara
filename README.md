@@ -73,7 +73,7 @@ pnpm preview
 
 ## License of the code
 
-MIT License
+BSD 3-Clause License — see [LICENSE](LICENSE).
 
 ## Attribution
 
