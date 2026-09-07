@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <title>OpenStreetMap Sound Demo (Navara)</title>
+  </head>
+  <body>
+    <div class="container-fluid px-0" data-bs-theme="dark">
+      <div id="map-container" class="position-relative">
+        <div id="map"></div>
+
+        <button id="about" class="btn btn-primary position-absolute top-0 start-0 m-3" data-bs-toggle="modal" data-bs-target="#aboutModal">About</button>
+        <div id="aboutModal" class="modal fade" tabindex="-1" aria-labelledby="aboutModalLabel" aria-hidden="true">
+          <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title" id="aboutModalLabel">About OpenStreetMap Sound Demo (Navara)</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body">
+                <p>This is the <a href="https://github.com/maplibre/navara" target="_blank">Navara</a> port of the <a href="https://github.com/smellman/osm-sound-demo" target="_blank">OpenStreetMap Sound Demo</a>, which is built on MapLibre GL JS.</p>
+                <p>Navara does not read the MapLibre Style Spec, so the basemap is not a style document: each <a href="https://openmaptiles.org/" target="_blank">OpenMapTiles</a> source layer is styled with Navara's own vector materials, and the buildings are extruded per feature from <code>render_height</code>.</p>
+                <p>Vector tiles by <a href="https://openstreetmap.jp/" target="_blank">OpenStreetMap Japan</a>, data © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap contributors</a>.</p>
+                <p>Original sound example developed by <a href="https://docs.mapbox.com/mapbox-gl-js/example/dancing-buildings/" target="_blank">Mapbox</a>, and all music in the original is by <a href="https://www.otherman-records.com/" target="_blank">Otherman Records</a>.</p>
+                <p>Original demo developed by <a href="https://github.com/smellman" target="_blank">Taro Matsuzawa (smellman)</a>.</p>
+                <p class="text-warning mb-0">Audio playback and the audio-reactive buildings are not ported yet — this build is the map itself.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="flyTo" class="dropdown position-absolute top-0 end-0 m-3" role="group">
+          <button type="button" class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+            Fly To
+          </button>
+          <ul id="flyTo-menu" class="dropdown-menu dropdown-menu-end"></ul>
+        </div>
+
+        <div id="location" class="position-absolute top-0 m-3" style="right: 6rem;">
+          <button id="locate-button" class="btn btn-primary">
+            <i class="bi bi-geo-alt-fill"></i> Locate Me
+          </button>
+        </div>
+
+        <div id="hud" class="position-absolute bottom-0 start-0 m-3 px-2 py-1 rounded bg-body-tertiary bg-opacity-75 small text-body-secondary">
+          <span id="hud-status">loading…</span>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

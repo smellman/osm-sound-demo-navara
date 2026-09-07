@@ -1,0 +1,28 @@
+{
+  "name": "osm-sound-demo-navara",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "pnpm@12.3.4",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@navaramap/three": "^0.1.1",
+    "@navaramap/three-default-plugin": "^0.1.1",
+    "@navaramap/three-plugins": "^0.1.1",
+    "@popperjs/core": "^2.11.8",
+    "bootstrap": "^5.3.8",
+    "bootstrap-icons": "^1.13.1",
+    "postprocessing": "^6.39.4",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.4",
+    "sass": "^1.104.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.0"
+  }
+}
