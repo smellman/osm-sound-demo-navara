@@ -1,4 +1,5 @@
-import ThreeView, { Color } from '@navaramap/three'
+import ThreeView, { Color, vector3ToGeodetic } from '@navaramap/three'
+import type { AmbientLightDesc } from '@navaramap/three-default-descs'
 import {
   DefaultPlugin,
   type DefaultDescriptions,
@@ -17,7 +18,7 @@ import { TileJsonPlugin } from '@navaramap/three-plugins'
 const OSM_JP_TILEJSON_URL = 'https://tile.openstreetmap.jp/data/planet.json'
 
 /** Camera pose the demo opens on: a tilted view over Tokyo, as in the original. */
-export const INITIAL_CAMERA = {
+const INITIAL_CAMERA = {
   lng: 139.767165,
   lat: 35.680655,
   height: 0,
@@ -26,6 +27,61 @@ export const INITIAL_CAMERA = {
   pitch: -25,
   roll: 0,
 } as const
+
+/** How the fly-to and locate controls frame their destination. */
+const ARRIVAL_FRAMING = {
+  height: INITIAL_CAMERA.height,
+  distance: INITIAL_CAMERA.distance,
+  pitch: INITIAL_CAMERA.pitch,
+  roll: INITIAL_CAMERA.roll,
+} as const
+
+/**
+ * A point on the ground plus how far the camera sits from it. Passing one to
+ * `setCamera` with a heading aims the camera at the point from that side.
+ */
+type CameraTarget = {
+  lng: number
+  lat: number
+  height: number
+  distance: number
+  pitch: number
+  roll: number
+}
+
+/**
+ * Derives an orbit target from where the camera is actually looking: the ground
+ * point at the centre of the view, and the camera's distance to it. Returns
+ * `null` before the depth buffer has anything in it to pick against.
+ */
+const readOrbitTarget = (
+  view: MapView,
+  container: HTMLElement,
+): CameraTarget | null => {
+  const bounds = container.getBoundingClientRect()
+  const picked = view.pickTerrainPosition(
+    bounds.left + bounds.width / 2,
+    bounds.top + bounds.height / 2,
+  )
+  if (!picked) return null
+
+  const { lng, lat, height } = vector3ToGeodetic(picked)
+  const camera = view.camera.positionECEF
+  const { pitch = INITIAL_CAMERA.pitch, roll = 0 } = view.camera.orientation
+
+  return {
+    lng,
+    lat,
+    height,
+    distance: Math.hypot(
+      camera.x - picked.x,
+      camera.y - picked.y,
+      camera.z - picked.z,
+    ),
+    pitch,
+    roll,
+  }
+}
 
 /** Dark palette, in the spirit of the toner style the original demo uses. */
 const PALETTE = {
@@ -40,19 +96,65 @@ const PALETTE = {
 } as const
 
 /** Fallback block height for buildings the data has no height for. */
-const MIN_BUILDING_HEIGHT = 3
+export const MIN_BUILDING_HEIGHT = 3
+
+/** Baseline fill-light intensity; the visualizer drives it away from this. */
+const FILL_LIGHT_INTENSITY = 0.6
 
 const color = (hex: string) => new Color().setStyle(hex)
 
-export type MapView = ThreeView<DefaultDescriptions>
+type MapView = ThreeView<DefaultDescriptions>
+
+/**
+ * Decides how tall a building renders. The idle implementation just returns the
+ * feature's own height; the audio visualizer swaps in one driven by the
+ * spectrum.
+ *
+ * @param renderHeight - The feature's `render_height`, in metres.
+ * @param minHeight - The feature's `render_min_height`, in metres.
+ */
+export type BuildingHeights = (
+  renderHeight: number,
+  minHeight: number,
+) => { height: number; extrudedHeight: number }
+
+/** Buildings at their real heights — how the map looks with no music playing. */
+export const realBuildingHeights: BuildingHeights = (renderHeight, minHeight) => ({
+  height: minHeight,
+  // Buildings with no height tag still deserve a footprint block.
+  extrudedHeight: Math.max(renderHeight, minHeight + MIN_BUILDING_HEIGHT),
+})
+
+export type MapScene = {
+  view: MapView
+  /** Swaps the function that decides building heights, and re-renders with it. */
+  setBuildingHeights: (heights: BuildingHeights) => void
+  /** Tints the scene's fill light, as the original demo does with `map.setLight`. */
+  setFillLight: (light: { color: Color; intensity: number }) => void
+  /** Restores the fill light the map opens with. */
+  resetFillLight: () => void
+  /**
+   * Re-reads the ground point at the centre of the view, so the following
+   * `orbitTo` calls turn around whatever the camera is looking at now.
+   *
+   * @returns The heading the camera is on, to orbit onward from.
+   */
+  beginOrbit: () => number
+  /** Points the camera at the orbit target from the given compass heading. */
+  orbitTo: (heading: number) => void
+  /** Flies to a location and frames it the way the map opens on Tokyo. */
+  flyTo: (to: { lng: number; lat: number }) => Promise<boolean>
+  /** Whether the engine redraws every frame or only on change. */
+  setContinuousRendering: (enabled: boolean) => void
+}
 
 /**
  * Builds the vector basemap: one vector-tile source, one layer per
  * OpenMapTiles source layer.
  */
-export const createMapView = async (
+export const createMapScene = async (
   container: HTMLElement,
-): Promise<MapView> => {
+): Promise<MapScene> => {
   const view = new ThreeView<DefaultDescriptions>({
     container,
     backgroundColor: color(PALETTE.background),
@@ -72,7 +174,9 @@ export const createMapView = async (
   // black. The draped (clampToGround) layers bake into tile textures and
   // ignore lighting entirely. The sun gives the building faces different tones
   // so the blocks read as 3D; the ambient fill keeps the shaded sides visible.
-  view.addLight({ ambient: { intensity: 0.6 } })
+  const fillLight = view.addLight<AmbientLightDesc>({
+    ambient: { intensity: FILL_LIGHT_INTENSITY },
+  })
   view.addLight({ sun: { intensity: 1.5 } })
   // Pin a global instant so the sun lands in the same place on every machine.
   view.atmosphere.date = new Date('2026-06-21T02:00:00Z')
@@ -81,6 +185,7 @@ export const createMapView = async (
   // cover, so paint it the basemap's base tone instead of the default white.
   view.globe.color = color(PALETTE.earth)
 
+  let orbitTarget: CameraTarget = INITIAL_CAMERA
   view.setCamera(INITIAL_CAMERA)
 
   // A plain ellipsoid surface for the draped layers to bake onto: this scene
@@ -143,21 +248,55 @@ export const createMapView = async (
       extrudedHeight: 0,
     },
   })
+  let buildingHeights = realBuildingHeights
   buildings.on('featureUpdated', ({ evaluator }) => {
     evaluator.evaluate(
-      ({ properties }) => {
-        const top = (properties?.['render_height'] as number | undefined) ?? 0
-        const base =
-          (properties?.['render_min_height'] as number | undefined) ?? 0
-        return {
-          height: base,
-          // Buildings with no height tag still deserve a footprint block.
-          extrudedHeight: Math.max(top, base + MIN_BUILDING_HEIGHT),
-        }
-      },
+      ({ properties }) =>
+        buildingHeights(
+          (properties?.['render_height'] as number | undefined) ?? 0,
+          (properties?.['render_min_height'] as number | undefined) ?? 0,
+        ),
       { filters: ['render_height', 'render_min_height'] },
     )
   })
 
-  return view
+  return {
+    view,
+    setBuildingHeights: (heights) => {
+      buildingHeights = heights
+      // Marks the layer for re-evaluation on the next frame, which is what
+      // fires `featureUpdated` again for the features already loaded.
+      buildings.forceUpdate()
+    },
+    setFillLight: ({ color: lightColor, intensity }) => {
+      fillLight.update({ ambient: { color: lightColor, intensity } })
+    },
+    resetFillLight: () => {
+      fillLight.update({
+        ambient: { color: color('#ffffff'), intensity: FILL_LIGHT_INTENSITY },
+      })
+    },
+    beginOrbit: () => {
+      orbitTarget = readOrbitTarget(view, container) ?? orbitTarget
+      return view.camera.orientation.heading ?? INITIAL_CAMERA.heading
+    },
+
+    orbitTo: (heading) => {
+      // Re-aiming at a fixed target from a turning heading orbits the city,
+      // which is what `map.setBearing` does in the maplibre version.
+      view.setCamera({ ...orbitTarget, heading })
+    },
+
+    flyTo: async (to) => {
+      const target = { ...ARRIVAL_FRAMING, ...to }
+      // Keep the same local solar time at the destination, so the buildings
+      // are lit the same way wherever the camera lands.
+      view.atmosphere.setDateFromCameraAt({ lng: to.lng })
+      orbitTarget = target
+      return view.flyTo(target)
+    },
+    setContinuousRendering: (enabled) => {
+      view.animation = enabled
+    },
+  }
 }

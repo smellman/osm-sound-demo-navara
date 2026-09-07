@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@navaramap/three": "^0.1.1",
+    "@navaramap/three-default-descs": "0.1.1",
     "@navaramap/three-default-plugin": "^0.1.1",
     "@navaramap/three-plugins": "^0.1.1",
     "@popperjs/core": "^2.11.8",

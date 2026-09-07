@@ -112,6 +112,9 @@ importers:
       '@navaramap/three':
         specifier: ^0.1.1
         version: 0.1.1(@react-three/fiber@9.7.0(@types/react@19.2.18)(react@19.2.8)(three@0.185.1))(postprocessing@6.39.4(three@0.185.1))(react@19.2.8)(three@0.185.1)
+      '@navaramap/three-default-descs':
+        specifier: 0.1.1
+        version: 0.1.1(@navaramap/three@0.1.1(@react-three/fiber@9.7.0(@types/react@19.2.18)(react@19.2.8)(three@0.185.1))(postprocessing@6.39.4(three@0.185.1))(react@19.2.8)(three@0.185.1))(@react-three/fiber@9.7.0(@types/react@19.2.18)(react@19.2.8)(three@0.185.1))(postprocessing@6.39.4(three@0.185.1))(react@19.2.8)(three@0.185.1)
       '@navaramap/three-default-plugin':
         specifier: ^0.1.1
         version: 0.1.1(@navaramap/three@0.1.1(@react-three/fiber@9.7.0(@types/react@19.2.18)(react@19.2.8)(three@0.185.1))(postprocessing@6.39.4(three@0.185.1))(react@19.2.8)(three@0.185.1))(@react-three/fiber@9.7.0(@types/react@19.2.18)(react@19.2.8)(three@0.185.1))(postprocessing@6.39.4(three@0.185.1))(react@19.2.8)(three@0.185.1)

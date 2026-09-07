@@ -1,24 +1,20 @@
 import { LOCATIONS } from './locations'
-import { INITIAL_CAMERA, type MapView } from './map'
+import type { MapScene } from './map'
+import type { Visualizer } from './visualizer'
 
-/** How the fly-to and locate controls frame their destination. */
-const ARRIVAL = {
-  height: INITIAL_CAMERA.height,
-  distance: INITIAL_CAMERA.distance,
-  heading: 0,
-  pitch: INITIAL_CAMERA.pitch,
-  roll: 0,
-} as const
-
-const flyTo = (view: MapView, lng: number, lat: number) => {
-  // Keep the same local solar time at the destination, so the buildings are
-  // lit the same way wherever the camera lands.
-  view.atmosphere.setDateFromCameraAt({ lng })
-  return view.flyTo({ lng, lat, ...ARRIVAL })
-}
+/**
+ * Flies to a destination with the visualizer held off, so its per-frame camera
+ * orbit does not fight the flight.
+ */
+const flyTo = (
+  scene: MapScene,
+  visualizer: Visualizer,
+  lng: number,
+  lat: number,
+) => visualizer.suspendWhile(scene.flyTo({ lng, lat }))
 
 /** Fills the Fly To dropdown from the shared location list. */
-const setupFlyTo = (view: MapView) => {
+const setupFlyTo = (scene: MapScene, visualizer: Visualizer) => {
   const menu = document.getElementById('flyTo-menu')
   if (!menu) return
 
@@ -31,14 +27,18 @@ const setupFlyTo = (view: MapView) => {
     link.textContent = location.label
     link.addEventListener('click', (event) => {
       event.preventDefault()
-      void flyTo(view, location.lng, location.lat)
+      void flyTo(scene, visualizer, location.lng, location.lat)
     })
     item.appendChild(link)
     menu.appendChild(item)
   }
 }
 
-const setupLocate = (view: MapView, setStatus: (text: string) => void) => {
+const setupLocate = (
+  scene: MapScene,
+  visualizer: Visualizer,
+  setStatus: (text: string) => void,
+) => {
   const button = document.getElementById('locate-button')
   if (!(button instanceof HTMLButtonElement)) return
 
@@ -52,7 +52,7 @@ const setupLocate = (view: MapView, setStatus: (text: string) => void) => {
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
         button.disabled = false
-        void flyTo(view, coords.longitude, coords.latitude)
+        void flyTo(scene, visualizer, coords.longitude, coords.latitude)
       },
       (error) => {
         button.disabled = false
@@ -63,17 +63,25 @@ const setupLocate = (view: MapView, setStatus: (text: string) => void) => {
   })
 }
 
+/** How often the HUD re-reads the camera while the scene is animating. */
+const READOUT_INTERVAL_MS = 100
+
 /** Mirrors the camera pose into the HUD, so the scene stays readable while panning. */
-const setupCameraReadout = (view: MapView, setStatus: (text: string) => void) => {
+const setupCameraReadout = (
+  scene: MapScene,
+  setStatus: (text: string) => void,
+) => {
+  let lastRenderAt = 0
+
   const render = () => {
     // The engine camera is not readable on the very first frame after init():
     // `positionGeographic` asserts internally until it exists.
     let pose
     try {
       pose = {
-        ...view.camera.positionGeographic,
-        ...view.camera.orientation,
-        zoom: view.camera.zoom,
+        ...scene.view.camera.positionGeographic,
+        ...scene.view.camera.orientation,
+        zoom: scene.view.camera.zoom,
       }
     } catch {
       return
@@ -87,12 +95,43 @@ const setupCameraReadout = (view: MapView, setStatus: (text: string) => void) =>
     )
   }
 
-  view.camera.on('move', render)
+  // `move` only fires for interactive camera changes, so the programmatic
+  // orbit the visualizer drives is picked up off the render loop instead.
+  scene.view.camera.on('move', render)
+  scene.view.on('postRender', () => {
+    const now = performance.now()
+    if (now - lastRenderAt < READOUT_INTERVAL_MS) return
+    lastRenderAt = now
+    render()
+  })
   render()
 }
 
-export const setupUI = (view: MapView, setStatus: (text: string) => void) => {
-  setupFlyTo(view)
-  setupLocate(view, setStatus)
-  setupCameraReadout(view, setStatus)
+/**
+ * Keeps the map out from under the fixed-bottom player navbar, whose height
+ * changes when the controls wrap on narrow screens.
+ */
+export const fitMapToNavbar = (scene: MapScene, container: HTMLElement) => {
+  const fit = () => {
+    const navbar = document.querySelector('.navbar')
+    const navbarHeight = navbar instanceof HTMLElement ? navbar.offsetHeight : 0
+    container.style.height = `${window.innerHeight - navbarHeight}px`
+    scene.view.resize()
+  }
+
+  fit()
+  window.addEventListener('resize', fit)
+  window.addEventListener('orientationchange', fit)
+  // The navbar reflows as the release list and the marquee fill in.
+  new ResizeObserver(fit).observe(document.querySelector('.navbar') ?? document.body)
+}
+
+export const setupUI = (
+  scene: MapScene,
+  visualizer: Visualizer,
+  setStatus: (text: string) => void,
+) => {
+  setupFlyTo(scene, visualizer)
+  setupLocate(scene, visualizer, setStatus)
+  setupCameraReadout(scene, setStatus)
 }
