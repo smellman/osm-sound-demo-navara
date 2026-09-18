@@ -5,6 +5,7 @@ import { AudioEngine } from './audio'
 import { createMapScene } from './map'
 import { setupPlayer } from './player'
 import { fitMapToNavbar, setupUI } from './ui'
+import { setupVJMode } from './vj'
 import { createVisualizer } from './visualizer'
 
 const container = document.getElementById('map')
@@ -24,8 +25,9 @@ try {
   const visualizer = createVisualizer(scene, audio)
 
   setupUI(scene, visualizer, setStatus)
-  setupPlayer(audio, visualizer)
-  fitMapToNavbar(scene, container)
+  const player = setupPlayer(audio, visualizer)
+  const refit = fitMapToNavbar(scene, container)
+  setupVJMode(audio, visualizer, player, refit)
 } catch (error) {
   console.error('Failed to initialize the map:', error)
   setStatus('failed to initialize the map — see the console')

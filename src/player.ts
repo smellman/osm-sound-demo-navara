@@ -18,6 +18,8 @@ const el = <T extends HTMLElement>(id: string): T | null =>
  * The release/track player from the original demo: a release picker, transport
  * buttons and a volume popup. Starting playback also starts the visualizer,
  * which is what makes the buildings dance.
+ *
+ * @returns A handle for stopping the transport from outside, for VJ mode.
  */
 export const setupPlayer = (audio: AudioEngine, visualizer: Visualizer) => {
   const select = el<HTMLSelectElement>('release-select')
@@ -153,6 +155,7 @@ export const setupPlayer = (audio: AudioEngine, visualizer: Visualizer) => {
   renderTrack()
   renderPlayButton()
 
+
   // The release list is long enough that it is worth not blocking the map on it.
   void fetchAllReleases().then((releases) => {
     if (!select) return
@@ -164,4 +167,8 @@ export const setupPlayer = (audio: AudioEngine, visualizer: Visualizer) => {
       select.appendChild(option)
     }
   })
+
+  // VJ mode takes the analyser over, so it needs to stop the transport the same
+  // way the stop button does — otherwise the button keeps its playing state.
+  return { stop }
 }

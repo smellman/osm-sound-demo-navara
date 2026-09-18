@@ -25,10 +25,8 @@ Implemented:
 - The audio-reactive "dancing buildings": each building keeps its real height
   and is lifted from the ground by its frequency band, while the camera slowly
   orbits and the fill light sweeps through the hue circle
-
-Not ported yet:
-
-- VJ mode (driving the visualizer from a live audio input device)
+- VJ mode: the visualizer runs off a live audio input and the interface gets
+  out of the way, so the map can be projected
 
 ## How to run
 
@@ -44,6 +42,40 @@ pnpm dev
 pnpm build    # tsc && vite build
 pnpm preview
 ```
+
+## VJ mode
+
+VJ mode drives the buildings from a live audio input rather than from the
+built-in player, and hides the interface so the map fills the screen. The input
+is meant to be a loopback of the system output, so route that first, then press
+**Turn On VJ Mode** and grant the microphone permission. Press <kbd>Esc</kbd> to
+leave.
+
+The captured audio is deliberately not played back — it is only analysed —
+because feeding a loopback of the output back into the output would echo.
+
+Desktop browsers only; the button hides itself where `getUserMedia` is
+unavailable.
+
+### macOS
+
+Install [Loopback.app](https://rogueamoeba.com/loopback/) and route the system
+output into a virtual input device.
+
+![Loopback screenshot](https://i.gyazo.com/051fe278806212ef0061b2d18acd7359.png)
+
+### Linux
+
+Tested on Ubuntu Studio 25.04 + PipeWire.
+
+```bash
+pactl load-module module-remap-source master=VirtualSink.monitor source_name=VirtualMic source_properties=device.description=VirtualMic
+```
+
+Use [Helvum](https://gitlab.freedesktop.org/pipewire/helvum) to check the
+connection.
+
+![Helvum screenshot](https://i.gyazo.com/3e7d026299a4966a1c306ce6a911385f.png)
 
 ## Notes
 

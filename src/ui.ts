@@ -110,6 +110,9 @@ const setupCameraReadout = (
 /**
  * Keeps the map out from under the fixed-bottom player navbar, whose height
  * changes when the controls wrap on narrow screens.
+ *
+ * @returns The fit function, to re-run when something else changes the navbar
+ * — VJ mode hides it entirely.
  */
 export const fitMapToNavbar = (scene: MapScene, container: HTMLElement) => {
   const fit = () => {
@@ -129,7 +132,11 @@ export const fitMapToNavbar = (scene: MapScene, container: HTMLElement) => {
   window.addEventListener('resize', fit)
   window.addEventListener('orientationchange', fit)
   // The navbar reflows as the release list and the marquee fill in.
-  new ResizeObserver(fit).observe(document.querySelector('.navbar') ?? document.body)
+  new ResizeObserver(fit).observe(
+    document.querySelector('.navbar') ?? document.body,
+  )
+
+  return fit
 }
 
 export const setupUI = (

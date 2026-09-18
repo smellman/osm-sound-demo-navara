@@ -23,6 +23,7 @@ export class AudioEngine {
   private readonly analyser = this.context.createAnalyser()
   private readonly data = new Uint8Array(BINS)
   private element: HTMLAudioElement | null = null
+  private stream: MediaStream | null = null
 
   /** Called when the current track plays to its end. */
   onEnded: () => void = () => {}
@@ -41,6 +42,11 @@ export class AudioEngine {
 
   get playing() {
     return this.element !== null && !this.element.paused
+  }
+
+  /** Whether the analyser is being fed by a live input device (VJ mode). */
+  get listening() {
+    return this.stream !== null
   }
 
   get volume() {
@@ -88,6 +94,31 @@ export class AudioEngine {
     this.element.pause()
     this.element.currentTime = 0
     this.element = null
+    this.data.fill(0)
+  }
+
+  /**
+   * Switches the analyser over to a live audio input device, for VJ mode. The
+   * device is expected to be a loopback of the system output, so the input is
+   * deliberately **not** routed to the speakers: playing it back would feed it
+   * straight into itself.
+   *
+   * Call it from a user gesture — the permission prompt needs one.
+   */
+  async listen(): Promise<void> {
+    this.stop()
+    this.stopListening()
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    await this.context.resume()
+    this.context.createMediaStreamSource(stream).connect(this.analyser)
+    this.stream = stream
+  }
+
+  stopListening(): void {
+    if (!this.stream) return
+    for (const track of this.stream.getTracks()) track.stop()
+    this.stream = null
     this.data.fill(0)
   }
 }
