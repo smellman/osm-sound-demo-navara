@@ -104,21 +104,6 @@ const SSAO = {
   radius: 20,
 } as const
 
-/**
- * How the buildings read to the reflection pass: glass towers that pick up
- * their neighbours. `reflectivity` is the value SSR looks for — below 0.01 it
- * skips the surface entirely — and a low `roughness` keeps the reflection
- * sharp rather than smeared.
- *
- * The buildings carry this rather than the water, which stays draped: a dense
- * city reflects in every direction, while the water around Tokyo Station is
- * sparse and has only sky above it to reflect.
- */
-const GLASS = {
-  reflectivity: 0.3,
-  roughness: 0.1,
-} as const
-
 /** Bloom around the glowing buildings; nothing else is in its mask. */
 const BLOOM = {
   strength: 1.2,
@@ -295,7 +280,6 @@ export const createMapScene = async (
       clampToGround: false,
       height: 0,
       extrudedHeight: 0,
-      ...GLASS,
       // The glow the music drives; the visualizer sets both the colour and the
       // intensity, and the bloom mask is attached with the effect.
       emissiveIntensity: 0,
@@ -307,13 +291,16 @@ export const createMapScene = async (
    * their G-buffers before the first tiles are built leaves the base render
    * white. The first batch of building features is the signal — `idle` never
    * arrives at this zoom, because tile processing does not stop.
+   *
+   * Only ambient occlusion lives here. Screen-space reflections were tried and
+   * dropped: with the buildings given a reflectivity, the pass changed exactly
+   * zero pixels at both the demo's camera and a street-level one.
    */
   let sceneEffectsAdded = false
   const addSceneEffects = () => {
     if (sceneEffectsAdded) return
     sceneEffectsAdded = true
     view.addEffect({ ssao: SSAO })
-    view.addEffect({ ssr: {} })
     // With `animation` off the engine only redraws on change, and nothing
     // else marks the scene dirty, so the new passes would go unseen.
     view.forceUpdate()
