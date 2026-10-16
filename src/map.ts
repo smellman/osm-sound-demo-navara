@@ -100,6 +100,27 @@ const PALETTE = {
   glow: '#9fd0ff',
 } as const
 
+/** Contact shadows where the buildings meet the ground and each other. */
+const SSAO = {
+  intensity: 3,
+  radius: 20,
+} as const
+
+/**
+ * How the buildings read to the reflection pass: glass towers that pick up
+ * their neighbours. `reflectivity` is the value SSR looks for — below 0.01 it
+ * skips the surface entirely — and a low `roughness` keeps the reflection
+ * sharp rather than smeared.
+ *
+ * The buildings carry this rather than the water, which stays draped: a dense
+ * city reflects in every direction, while the water around Tokyo Station is
+ * sparse and has only sky above it to reflect.
+ */
+const GLASS = {
+  reflectivity: 0.3,
+  roughness: 0.1,
+} as const
+
 /** Bloom around the glowing buildings; nothing else is in its mask. */
 const BLOOM = {
   strength: 1.2,
@@ -285,6 +306,7 @@ export const createMapScene = async (
       clampToGround: false,
       height: 0,
       extrudedHeight: 0,
+      ...GLASS,
       // The glow the music drives, and the mask that lets the bloom see it.
       emissiveColor: color(PALETTE.glow),
       emissiveIntensity: 0,
@@ -292,12 +314,25 @@ export const createMapScene = async (
   })
 
   /**
+   * Screen-space effects can only be added once the city exists: allocating
+   * their G-buffers before the first tiles are built leaves the base render
+   * white. The first batch of building features is the signal — `idle` never
+   * arrives at this zoom, because tile processing does not stop.
+   */
+  let sceneEffectsAdded = false
+  const addSceneEffects = () => {
+    if (sceneEffectsAdded) return
+    sceneEffectsAdded = true
+    view.addEffect({ ssao: SSAO })
+    view.addEffect({ ssr: {} })
+    // With `animation` off the engine only redraws on change, and nothing
+    // else marks the scene dirty, so the new passes would go unseen.
+    view.forceUpdate()
+  }
+
+  /**
    * Bloom reads the emissive buffer through an id mask, so only the layers
    * that name it in `effectIds` glow — here, the buildings and nothing else.
-   *
-   * It is added on first use rather than during setup: allocating the effect's
-   * G-buffers before the first tiles are built leaves the base render white,
-   * whereas adding it once the city is up is fine.
    */
   let bloom: ReturnType<typeof view.addEffect<SelectiveBloomEffectDesc>> | undefined
   const ensureBloom = () => {
@@ -308,6 +343,7 @@ export const createMapScene = async (
 
   let buildingHeights = realBuildingHeights
   buildings.on('featureUpdated', ({ evaluator }) => {
+    addSceneEffects()
     evaluator.evaluate(
       ({ properties }) =>
         buildingHeights(
