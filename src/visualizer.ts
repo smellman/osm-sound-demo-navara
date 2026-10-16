@@ -1,6 +1,7 @@
 import { Color } from '@navaramap/three'
 import { BINS, type AudioEngine } from './audio'
 import {
+  GLOW_AT_FULL_LEVEL,
   MIN_BUILDING_HEIGHT,
   realBuildingHeights,
   type BuildingHeights,
@@ -109,6 +110,9 @@ export const createVisualizer = (
     orbitStartedAt ??= now
 
     scene.setBuildingHeights(liftedHeights(levels))
+    // The whole layer glows together: bloom reads one emissive buffer, so the
+    // per-band difference stays in the heights rather than the light.
+    scene.setBuildingGlow(smoothedAverage * GLOW_AT_FULL_LEVEL)
     scene.orbitTo(
       (orbitFrom + (now - orbitStartedAt) * ORBIT_DEGREES_PER_MS) % 360,
     )
@@ -145,6 +149,7 @@ export const createVisualizer = (
       scene.setContinuousRendering(false)
       // Back to the city as it really is.
       scene.setBuildingHeights(realBuildingHeights)
+      scene.setBuildingGlow(0)
       scene.resetFillLight()
     },
 

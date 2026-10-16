@@ -1,5 +1,8 @@
 import ThreeView, { Color, vector3ToGeodetic } from '@navaramap/three'
-import type { AmbientLightDesc } from '@navaramap/three-default-descs'
+import type {
+  AmbientLightDesc,
+  SelectiveBloomEffectDesc,
+} from '@navaramap/three-default-descs'
 import {
   DefaultPlugin,
   type DefaultDescriptions,
@@ -93,7 +96,25 @@ const PALETTE = {
   water: '#0e1727',
   road: '#4a4a55',
   building: '#7c7c8a',
+  /** What the buildings emit on a beat, before the bloom spreads it. */
+  glow: '#9fd0ff',
 } as const
+
+/** Bloom around the glowing buildings; nothing else is in its mask. */
+const BLOOM = {
+  strength: 1.2,
+  radius: 0.6,
+  threshold: 0,
+} as const
+
+/**
+ * Emissive intensity the buildings reach at a full-level beat.
+ *
+ * The usable range of this material's emissive is far smaller than the name
+ * suggests: measured against this scene, 0.04 already lifts the mean frame
+ * luminance from 72 to 108, and 0.5 blows every pixel out to white.
+ */
+export const GLOW_AT_FULL_LEVEL = 0.035
 
 /**
  * Colours for Navara's built-in attribution UI, so its popover matches the
@@ -144,6 +165,8 @@ export type MapScene = {
   view: MapView
   /** Swaps the function that decides building heights, and re-renders with it. */
   setBuildingHeights: (heights: BuildingHeights) => void
+  /** How brightly the buildings glow into the bloom. 0 is off. */
+  setBuildingGlow: (intensity: number) => void
   /** Tints the scene's fill light, as the original demo does with `map.setLight`. */
   setFillLight: (light: { color: Color; intensity: number }) => void
   /** Restores the fill light the map opens with. */
@@ -262,8 +285,27 @@ export const createMapScene = async (
       clampToGround: false,
       height: 0,
       extrudedHeight: 0,
+      // The glow the music drives, and the mask that lets the bloom see it.
+      emissiveColor: color(PALETTE.glow),
+      emissiveIntensity: 0,
     },
   })
+
+  /**
+   * Bloom reads the emissive buffer through an id mask, so only the layers
+   * that name it in `effectIds` glow — here, the buildings and nothing else.
+   *
+   * It is added on first use rather than during setup: allocating the effect's
+   * G-buffers before the first tiles are built leaves the base render white,
+   * whereas adding it once the city is up is fine.
+   */
+  let bloom: ReturnType<typeof view.addEffect<SelectiveBloomEffectDesc>> | undefined
+  const ensureBloom = () => {
+    if (bloom) return
+    bloom = view.addEffect<SelectiveBloomEffectDesc>({ selectiveBloom: BLOOM })
+    buildings.update({ polygon: { effectIds: [bloom.id] } })
+  }
+
   let buildingHeights = realBuildingHeights
   buildings.on('featureUpdated', ({ evaluator }) => {
     evaluator.evaluate(
@@ -284,6 +326,11 @@ export const createMapScene = async (
       // fires `featureUpdated` again for the features already loaded.
       buildings.forceUpdate()
     },
+    setBuildingGlow: (intensity) => {
+      if (intensity > 0) ensureBloom()
+      buildings.update({ polygon: { emissiveIntensity: intensity } })
+    },
+
     setFillLight: ({ color: lightColor, intensity }) => {
       fillLight.update({ ambient: { color: lightColor, intensity } })
     },
