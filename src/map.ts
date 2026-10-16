@@ -96,8 +96,6 @@ const PALETTE = {
   water: '#0e1727',
   road: '#4a4a55',
   building: '#7c7c8a',
-  /** What the buildings emit on a beat, before the bloom spreads it. */
-  glow: '#9fd0ff',
 } as const
 
 /** Contact shadows where the buildings meet the ground and each other. */
@@ -127,17 +125,6 @@ const BLOOM = {
   radius: 0.6,
   threshold: 0,
 } as const
-
-/**
- * Emissive the buildings would reach if the music ever pegged the meter.
- *
- * It never does: measured over 3,300 frames of playback, the smoothed level
- * the visualizer multiplies this by sits at 0.39 and peaks at 0.54. So the
- * glow actually runs between roughly 0.12 and 0.16, which against this scene
- * lifts the mean frame luminance from 69 to about 118-135 — bright, with the
- * dark ground and water still reading. Clipping starts around 0.4.
- */
-export const GLOW_AT_FULL_LEVEL = 0.3
 
 /**
  * Colours for Navara's built-in attribution UI, so its popover matches the
@@ -188,8 +175,8 @@ export type MapScene = {
   view: MapView
   /** Swaps the function that decides building heights, and re-renders with it. */
   setBuildingHeights: (heights: BuildingHeights) => void
-  /** How brightly the buildings glow into the bloom. 0 is off. */
-  setBuildingGlow: (intensity: number) => void
+  /** How the buildings glow into the bloom. Intensity 0 is off. */
+  setBuildingGlow: (glow: { color: Color; intensity: number }) => void
   /** Tints the scene's fill light, as the original demo does with `map.setLight`. */
   setFillLight: (light: { color: Color; intensity: number }) => void
   /** Restores the fill light the map opens with. */
@@ -309,8 +296,8 @@ export const createMapScene = async (
       height: 0,
       extrudedHeight: 0,
       ...GLASS,
-      // The glow the music drives, and the mask that lets the bloom see it.
-      emissiveColor: color(PALETTE.glow),
+      // The glow the music drives; the visualizer sets both the colour and the
+      // intensity, and the bloom mask is attached with the effect.
       emissiveIntensity: 0,
     },
   })
@@ -364,9 +351,11 @@ export const createMapScene = async (
       // fires `featureUpdated` again for the features already loaded.
       buildings.forceUpdate()
     },
-    setBuildingGlow: (intensity) => {
+    setBuildingGlow: ({ color: glowColor, intensity }) => {
       if (intensity > 0) ensureBloom()
-      buildings.update({ polygon: { emissiveIntensity: intensity } })
+      buildings.update({
+        polygon: { emissiveColor: glowColor, emissiveIntensity: intensity },
+      })
     },
 
     setFillLight: ({ color: lightColor, intensity }) => {

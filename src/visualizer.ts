@@ -1,7 +1,6 @@
 import { Color } from '@navaramap/three'
 import { BINS, type AudioEngine } from './audio'
 import {
-  GLOW_AT_FULL_LEVEL,
   MIN_BUILDING_HEIGHT,
   realBuildingHeights,
   type BuildingHeights,
@@ -28,8 +27,47 @@ const BAND_LIFT_RATIO = 1.2
 /** Degrees of camera orbit per millisecond — a full turn takes about 4 minutes. */
 const ORBIT_DEGREES_PER_MS = 1 / 700
 
-/** Milliseconds for the fill light to sweep one degree of hue: a minute a lap. */
+/** Milliseconds for the hue sweep to advance one degree: about a minute a lap. */
 const HUE_MS_PER_DEGREE = 165
+
+/**
+ * How quickly the baseline the glow is measured against follows the music.
+ *
+ * The band envelopes sit near their ceiling most of the time — measured over
+ * playback, the loudest band's median is 0.82 against a maximum of 0.93 — so
+ * driving the glow from one directly gives a city that glows flat out.
+ * Subtracting a slow follower leaves only what a beat adds over the last
+ * second or so, which is what reads as a pulse.
+ */
+const GLOW_BASELINE_MS = 1200
+
+/**
+ * Scales that difference into the 0-1 range the glow is expressed in. Measured
+ * over playback the difference peaks at 0.65, so this puts the hardest beat at
+ * the top of the range and leaves the median near zero.
+ */
+const GLOW_PUNCH_GAIN = 1.6
+
+/**
+ * Emissive the buildings reach on the strongest beats. Against this scene,
+ * clipping starts around 0.4.
+ */
+const GLOW_AT_FULL_PUNCH = 0.26
+
+/**
+ * How the glow itself rises and falls, in milliseconds. The punch signal is
+ * spiky by construction, and following it directly strobes; a quick rise into
+ * a slow fall turns each beat into a swell instead.
+ */
+const GLOW_ATTACK_MS = 60
+const GLOW_DECAY_MS = 450
+
+/**
+ * Saturation and lightness of the glow, as percentages. Saturated and kept off
+ * full lightness so a bright beat reads as colour instead of washing to white.
+ */
+const GLOW_SATURATION = 95
+const GLOW_LIGHTNESS = 55
 
 /**
  * Time constants of the per-band envelope, in milliseconds. The short attack
@@ -77,6 +115,11 @@ export const createVisualizer = (
   audio: AudioEngine,
 ): Visualizer => {
   const lightColor = new Color()
+  const glowColor = new Color()
+  /** Slow follower of the loudest band; the glow is whatever rises above it. */
+  let glowBaseline = 0
+  /** The glow actually in force, easing towards each beat's punch. */
+  let glow = 0
   /** Smoothed band levels, 0-1, one per frequency band. */
   const levels = new Float32Array(BINS)
   let smoothedAverage = 0
@@ -96,6 +139,7 @@ export const createVisualizer = (
     const average = audio.sample() / 255
     const spectrum = audio.spectrum
 
+    let peak = 0
     for (let band = 0; band < BINS; band += 1) {
       const target = (spectrum[band] ?? 0) / 255
       const level = levels[band] ?? 0
@@ -103,16 +147,32 @@ export const createVisualizer = (
         elapsed,
         target > level ? ATTACK_MS : RELEASE_MS,
       )
-      levels[band] = level + (target - level) * rate
+      const next = level + (target - level) * rate
+      levels[band] = next
+      if (next > peak) peak = next
     }
     smoothedAverage += (average - smoothedAverage) * approach(elapsed, RELEASE_MS)
+    glowBaseline += (peak - glowBaseline) * approach(elapsed, GLOW_BASELINE_MS)
 
     orbitStartedAt ??= now
+
+    // Only what a beat adds over the running baseline, so the city is dark
+    // between beats instead of glowing flat out.
+    const punch = Math.min(1, Math.max(0, peak - glowBaseline) * GLOW_PUNCH_GAIN)
+    glow +=
+      (punch - glow) *
+      approach(elapsed, punch > glow ? GLOW_ATTACK_MS : GLOW_DECAY_MS)
+    const hue = (now / HUE_MS_PER_DEGREE) % 360
 
     scene.setBuildingHeights(liftedHeights(levels))
     // The whole layer glows together: bloom reads one emissive buffer, so the
     // per-band difference stays in the heights rather than the light.
-    scene.setBuildingGlow(smoothedAverage * GLOW_AT_FULL_LEVEL)
+    scene.setBuildingGlow({
+      color: glowColor.setStyle(
+        `hsl(${hue}, ${GLOW_SATURATION}%, ${GLOW_LIGHTNESS}%)`,
+      ),
+      intensity: glow * GLOW_AT_FULL_PUNCH,
+    })
     scene.orbitTo(
       (orbitFrom + (now - orbitStartedAt) * ORBIT_DEGREES_PER_MS) % 360,
     )
@@ -120,7 +180,7 @@ export const createVisualizer = (
     // feeds into `map.setLight`, at a pace that suits a slow orbit.
     scene.setFillLight({
       color: lightColor.setStyle(
-        `hsl(${(now / HUE_MS_PER_DEGREE) % 360}, ${50 + smoothedAverage * 50}%, 50%)`,
+        `hsl(${hue}, ${50 + smoothedAverage * 50}%, 50%)`,
       ),
       intensity: 0.4 + smoothedAverage * 0.8,
     })
@@ -146,10 +206,12 @@ export const createVisualizer = (
       orbitStartedAt = null
       levels.fill(0)
       smoothedAverage = 0
+      glowBaseline = 0
+      glow = 0
       scene.setContinuousRendering(false)
       // Back to the city as it really is.
       scene.setBuildingHeights(realBuildingHeights)
-      scene.setBuildingGlow(0)
+      scene.setBuildingGlow({ color: glowColor, intensity: 0 })
       scene.resetFillLight()
     },
 
