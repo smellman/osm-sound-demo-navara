@@ -25,6 +25,9 @@ body {
 #hud {
   pointer-events: none;
   font-variant-numeric: tabular-nums;
+  /* Keep the readout clear of the attribution button in the opposite corner.
+     On a phone the text wraps to two lines and would otherwise run under it. */
+  max-width: calc(100% - 4rem);
 }
 
 /* That UI is docked to the bottom of the *viewport* with `position: fixed`, so

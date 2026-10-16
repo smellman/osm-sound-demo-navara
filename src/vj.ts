@@ -21,8 +21,14 @@ export const setupVJMode = (
   const button = document.getElementById('turn-on-vj-mode')
   if (!(button instanceof HTMLAnchorElement)) return
 
-  // Without a capture API there is no way into this mode at all.
-  if (!navigator.mediaDevices?.getUserMedia) {
+  // Without a capture API there is no way into this mode at all. A phone has
+  // one, but not the loopback device this needs — routing the system output
+  // into an input is a desktop arrangement — and the About text promises
+  // desktop only, so a touch-only device is out too. `any-pointer: fine`
+  // stays true on a laptop whose screen also takes touch.
+  const hasCaptureApi = Boolean(navigator.mediaDevices?.getUserMedia)
+  const hasPrecisePointer = window.matchMedia('(any-pointer: fine)').matches
+  if (!hasCaptureApi || !hasPrecisePointer) {
     button.style.display = 'none'
     return
   }
