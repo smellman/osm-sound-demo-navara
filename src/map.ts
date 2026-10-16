@@ -129,13 +129,15 @@ const BLOOM = {
 } as const
 
 /**
- * Emissive intensity the buildings reach at a full-level beat.
+ * Emissive the buildings would reach if the music ever pegged the meter.
  *
- * The usable range of this material's emissive is far smaller than the name
- * suggests: measured against this scene, 0.04 already lifts the mean frame
- * luminance from 72 to 108, and 0.5 blows every pixel out to white.
+ * It never does: measured over 3,300 frames of playback, the smoothed level
+ * the visualizer multiplies this by sits at 0.39 and peaks at 0.54. So the
+ * glow actually runs between roughly 0.12 and 0.16, which against this scene
+ * lifts the mean frame luminance from 69 to about 118-135 — bright, with the
+ * dark ground and water still reading. Clipping starts around 0.4.
  */
-export const GLOW_AT_FULL_LEVEL = 0.035
+export const GLOW_AT_FULL_LEVEL = 0.3
 
 /**
  * Colours for Navara's built-in attribution UI, so its popover matches the
