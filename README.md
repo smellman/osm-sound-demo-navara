@@ -4,11 +4,15 @@ A port of [osm-sound-demo](https://github.com/smellman/osm-sound-demo) from
 MapLibre GL JS to [Navara](https://github.com/maplibre/navara), the 3D map
 engine (Rust/WASM GIS core + Three.js rendering).
 
-Navara does **not** read the MapLibre Style Spec, so the basemap is not a style
-document. Each [OpenMapTiles](https://openmaptiles.org/) source layer is styled
-directly with Navara's own vector materials, and the buildings are extruded per
-feature from `render_height` / `render_min_height` — the properties the
-maplibre-gl version feeds into `fill-extrusion-height`.
+The basemap here is not a style document. Each
+[OpenMapTiles](https://openmaptiles.org/) source layer is styled directly with
+Navara's own vector materials, and the buildings are extruded per feature from
+`render_height` / `render_min_height` — the properties the maplibre-gl version
+feeds into `fill-extrusion-height`.
+
+Navara 0.2 does ship an experimental `MapLibreStylePlugin` that reads a MapLibre
+Style JSON, and the demo's original style renders through it. It is not used:
+see the note at the end.
 
 ## Status
 
@@ -25,6 +29,10 @@ Implemented:
 - The audio-reactive "dancing buildings": each building keeps its real height
   and is lifted from the ground by its frequency band, while the camera slowly
   orbits and the fill light sweeps through the hue circle
+- A bloom glow on the buildings that pulses with the beat, in the colour the
+  hue sweep is passing through
+- Screen-space ambient occlusion, so the city reads as blocks rather than a
+  field of flat panels
 - VJ mode: the visualizer runs off a live audio input and the interface gets
   out of the way, so the map can be projected
 
@@ -79,9 +87,10 @@ connection.
 
 ## Notes
 
-- `@navaramap/three` 0.1.1 inlines three's core into its own bundle, so the
-  console shows a `THREE.WARNING: Multiple instances of Three.js being imported`
-  on startup. It is upstream and does not affect rendering.
+- `@navaramap/three` inlines three's core into its own bundle, so the console
+  shows a `THREE.WARNING: Multiple instances of Three.js being imported` on
+  startup. It is upstream, still present in 0.2.1, and does not affect
+  rendering.
 - The building layer takes a while to fully populate on first load: the vector
   tileset maxes out at zoom 14 and the building geometry is the heaviest part
   of each tile.
@@ -104,6 +113,31 @@ connection.
   declared by hand. That UI docks itself to the bottom of the *viewport*, where
   the fixed-bottom player navbar would cover it, so `style.scss` lifts it by
   the navbar height that `fitMapToNavbar` publishes as a CSS variable.
+- **Screen-space effects have to be added after the first tiles are built.**
+  Allocating their G-buffers during setup leaves the base render white — with
+  the bloom threshold at 1.0, extracting nothing, the frame is still white, so
+  it is the base render rather than the extraction. Both the bloom and the
+  ambient occlusion therefore wait for the first batch of building features.
+  `idle` is no use as a signal: at this zoom tile processing never stops.
+- The glow follows what a beat adds over a 1.2s baseline, not the loudness
+  itself. Every signal in the chain sits near its ceiling — the loudest band's
+  median is 0.82 against a maximum of 0.93 — so driving the glow from one
+  directly gives a city that glows flat out instead of pulsing.
+- Screen-space reflections were tried and dropped. With the buildings given a
+  reflectivity, the pass changed exactly zero pixels at both the demo's camera
+  and a street-level one.
+- `depthOfField` cannot be used: Navara's wrapper builds the underlying
+  `DepthOfFieldEffect` without passing the camera, so every frame throws
+  `Cannot read properties of null (reading 'elements')`. `addEffect` itself
+  succeeds, which makes it look like a scene problem rather than a one-line
+  upstream bug.
+- The experimental `MapLibreStylePlugin` works — the demo's original
+  `maptiler-toner-ja` style renders, labels and all — but is not used here. It
+  needs `text-font` rewritten as `["literal", [...]]`, cannot read the legacy
+  `{stops: ...}` form, does not read the style's `glyphs` endpoint so fonts
+  must be supplied by hand, and keeps its sources private, which means a second
+  copy of the same tileset. The hand-written dark palette is also the look this
+  demo wants.
 - `.claude/skills/navara-usage/` is a copy of the
   [navara-usage skill](https://github.com/maplibre/navara/tree/main/skills/navara-usage)
   from the Navara repository, for AI coding agents working on this project.
