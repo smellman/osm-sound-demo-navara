@@ -23,8 +23,8 @@
   },
   "devDependencies": {
     "@types/three": "^0.186.0",
-    "sass": "^1.105.2",
+    "sass": "^1.106.1",
     "typescript": "^7.0.2",
-    "vite": "^8.3.4"
+    "vite": "^8.3.5"
   }
 }
