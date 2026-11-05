@@ -29,6 +29,9 @@ Implemented:
 - The audio-reactive "dancing buildings": each building keeps its real height
   and is lifted from the ground by its frequency band, while the camera slowly
   orbits and the fill light sweeps through the hue circle
+- Wave mode (the water button in the player): instead of dancing by band, the
+  buildings ripple outward from the centre of the view with the beat, as in
+  the original's wave mode
 - A bloom glow on the buildings that pulses with the beat, in the colour the
   hue sweep is passing through
 - Screen-space ambient occlusion, so the city reads as blocks rather than a
@@ -100,6 +103,17 @@ connection.
   also why the buildings keep their real heights while they dance: a band
   scales each building from its own height rather than flattening every
   building in the band to one value, so the skyline stays recognisable.
+- Wave mode needs each building's distance from the centre of the view, but
+  the evaluator passes properties, not geometry, and OpenMapTiles' building
+  layer has no coordinates of its own. So when a tile's building mesh is
+  created, its vertex buffers are averaged per batch id into one centroid per
+  building — before the first GPU upload, after which Navara frees the CPU
+  copies. This reads the evaluator's private mesh; if a Navara release
+  changes that, wave mode loses its positions and every building rides the
+  outermost ring, but the map keeps working. Where the maplibre version sorts
+  buildings into 24 concentric 80 m layers, this one delays the beat per
+  building by its own distance, over the same 1.9 km reach and at the same
+  pace.
 - The band levels run through a fast-attack / slow-release envelope, so a beat
   throws the buildings up and they sink back down instead of jittering.
 - The lift has a flat part in metres on top of the part proportional to a

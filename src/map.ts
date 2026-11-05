@@ -1,4 +1,10 @@
-import ThreeView, { Color, vector3ToGeodetic } from '@navaramap/three'
+import ThreeView, {
+  Color,
+  geodeticToVector3,
+  vector3ToGeodetic,
+  type FeatureEvaluator,
+} from '@navaramap/three'
+import { Vector3, type BufferAttribute, type Object3D } from 'three'
 import type {
   AmbientLightDesc,
   SelectiveBloomEffectDesc,
@@ -143,11 +149,88 @@ type MapView = ThreeView<DefaultDescriptions>
  *
  * @param renderHeight - The feature's `render_height`, in metres.
  * @param minHeight - The feature's `render_min_height`, in metres.
+ * @param position - Where the building stands, as the centroid of its mesh in
+ * world (ECEF) coordinates, or `undefined` when it could not be read.
  */
 export type BuildingHeights = (
   renderHeight: number,
   minHeight: number,
+  position: Readonly<Vector3> | undefined,
 ) => { height: number; extrudedHeight: number }
+
+/**
+ * Per-building centroids of one tile's building mesh, keyed by batch id as
+ * `centroidKey` rounds it.
+ *
+ * Navara hands the evaluator a feature's properties but not its geometry, and
+ * OpenMapTiles' building layer carries no coordinates of its own, so the only
+ * place a building's position can be read is the mesh's vertex buffers. Those
+ * are dropped from the JS heap on their first GPU upload, so this has to run
+ * from `featureCreated`, which Navara emits right after building the mesh and
+ * before it is rendered. That reaches into the evaluator's private mesh: if a
+ * Navara release changes the layout, this returns `undefined` and the
+ * buildings simply have no position, rather than breaking the map.
+ */
+/**
+ * The mesh stores each vertex's batch id as a 32-bit float, which rounds ids
+ * past 2^24 — and OpenMapTiles' ids get there. Rounding the evaluator's id the
+ * same way makes the two meet.
+ */
+const centroidKey = (batchId: number) => Math.fround(batchId)
+
+const readBuildingCentroids = (
+  evaluator: FeatureEvaluator,
+): Map<number, Vector3> | undefined => {
+  const mesh = (evaluator as unknown as { obj?: Object3D }).obj as
+    | (Object3D & {
+        geometry?: { getAttribute: (name: string) => BufferAttribute | undefined }
+      })
+    | undefined
+  const geometry = mesh?.geometry
+  if (!mesh || !geometry) return undefined
+
+  const batchIds = geometry.getAttribute('attrBatchId')
+  // Tile-local positions, placed by the mesh's transform...
+  const local = geometry.getAttribute('position')
+  // ...or, for relative-to-eye rendering, absolute positions split into a
+  // high and a low part for precision.
+  const high = geometry.getAttribute('position_3d_high')
+  const low = geometry.getAttribute('position_3d_low')
+  if (!batchIds?.array) return undefined
+  const isLocal = Boolean(local?.array)
+  const read: ((i: number, axis: 0 | 1 | 2) => number) | undefined = isLocal
+    ? (i, axis) => local!.getComponent(i, axis)
+    : high?.array && low?.array
+      ? (i, axis) => high.getComponent(i, axis) + low.getComponent(i, axis)
+      : undefined
+  if (!read) return undefined
+
+  const sums = new Map<number, [number, number, number, number]>()
+  for (let i = 0; i < batchIds.count; i += 1) {
+    const id = batchIds.getX(i)
+    const x = read(i, 0)
+    const y = read(i, 1)
+    const z = read(i, 2)
+    const sum = sums.get(id)
+    if (sum) {
+      sum[0] += x
+      sum[1] += y
+      sum[2] += z
+      sum[3] += 1
+    } else {
+      sums.set(id, [x, y, z, 1])
+    }
+  }
+
+  if (isLocal) mesh.updateMatrixWorld(true)
+  const centroids = new Map<number, Vector3>()
+  for (const [id, [x, y, z, count]] of sums) {
+    const centroid = new Vector3(x / count, y / count, z / count)
+    if (isLocal) centroid.applyMatrix4(mesh.matrixWorld)
+    centroids.set(id, centroid)
+  }
+  return centroids
+}
 
 /** Buildings at their real heights — how the map looks with no music playing. */
 export const realBuildingHeights: BuildingHeights = (renderHeight, minHeight) => ({
@@ -158,6 +241,11 @@ export const realBuildingHeights: BuildingHeights = (renderHeight, minHeight) =>
 
 export type MapScene = {
   view: MapView
+  /**
+   * The ground point the camera orbits, in world (ECEF) coordinates — the
+   * centre of the view as of the last `beginOrbit` or `flyTo`.
+   */
+  orbitCenter: () => Readonly<Vector3>
   /** Swaps the function that decides building heights, and re-renders with it. */
   setBuildingHeights: (heights: BuildingHeights) => void
   /** How the buildings glow into the bloom. Intensity 0 is off. */
@@ -317,21 +405,41 @@ export const createMapScene = async (
     buildings.update({ polygon: { effectIds: [bloom.id] } })
   }
 
+  /** Keyed by evaluator, so a tile's centroids go when the tile does. */
+  const centroidsByTile = new WeakMap<FeatureEvaluator, Map<number, Vector3>>()
+  buildings.on('featureCreated', ({ evaluator }) => {
+    const centroids = readBuildingCentroids(evaluator)
+    if (centroids) centroidsByTile.set(evaluator, centroids)
+  })
+
   let buildingHeights = realBuildingHeights
   buildings.on('featureUpdated', ({ evaluator }) => {
     addSceneEffects()
+    const centroids = centroidsByTile.get(evaluator)
     evaluator.evaluate(
-      ({ properties }) =>
+      ({ properties, batchId }) =>
         buildingHeights(
           (properties?.['render_height'] as number | undefined) ?? 0,
           (properties?.['render_min_height'] as number | undefined) ?? 0,
+          centroids?.get(centroidKey(batchId)),
         ),
       { filters: ['render_height', 'render_min_height'] },
     )
   })
 
+  const orbitCenterECEF = new Vector3()
+  const orbitCenter = () =>
+    orbitCenterECEF.copy(
+      geodeticToVector3({
+        lng: orbitTarget.lng,
+        lat: orbitTarget.lat,
+        height: orbitTarget.height,
+      }),
+    )
+
   return {
     view,
+    orbitCenter,
     setBuildingHeights: (heights) => {
       buildingHeights = heights
       // Marks the layer for re-evaluation on the next frame, which is what

@@ -139,6 +139,18 @@ export const fitMapToNavbar = (scene: MapScene, container: HTMLElement) => {
   return fit
 }
 
+/** The wave-mode toggle: buildings ripple out from the centre with the beat. */
+const setupWaveMode = (visualizer: Visualizer) => {
+  const button = document.getElementById('wave-button')
+  if (!(button instanceof HTMLButtonElement)) return
+
+  button.addEventListener('click', () => {
+    visualizer.setWaveMode(!visualizer.waveMode)
+    button.classList.toggle('active', visualizer.waveMode)
+    button.setAttribute('aria-pressed', String(visualizer.waveMode))
+  })
+}
+
 export const setupUI = (
   scene: MapScene,
   visualizer: Visualizer,
@@ -147,4 +159,5 @@ export const setupUI = (
   setupFlyTo(scene, visualizer)
   setupLocate(scene, visualizer, setStatus)
   setupCameraReadout(scene, setStatus)
+  setupWaveMode(visualizer)
 }

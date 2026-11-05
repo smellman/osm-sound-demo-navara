@@ -1,4 +1,5 @@
 import { Color } from '@navaramap/three'
+import type { Vector3 } from 'three'
 import { BINS, type AudioEngine } from './audio'
 import {
   MIN_BUILDING_HEIGHT,
@@ -102,11 +103,114 @@ const liftedHeights =
     }
   }
 
+/**
+ * Wave mode: the beat travels outward from the centre of the view as a ring,
+ * as in the maplibre version's wave mode. That one sorts the buildings into 24
+ * concentric layers 80 m apart and lets the wave cross a ring every 3 frames;
+ * these are the same reach and pace, but continuous — each building reads the
+ * beat as it was when the wave left the centre, delayed by its own distance.
+ */
+const WAVE_REACH_METRES = 24 * 80
+/** Roughly 80 m every three 60 fps frames. */
+const WAVE_SPEED_METRES_PER_MS = 1.6
+/** How many of the lowest bands make up the beat that travels. */
+const WAVE_BANDS = 4
+/**
+ * The ripple riding on the wave: its wavelength along the ground, how fast it
+ * runs, and how much of the lift it accounts for at full energy.
+ */
+const RIPPLE_WAVELENGTH_METRES = 1000
+const RIPPLE_MS_PER_RADIAN = 200
+const RIPPLE_SHARE = 0.35
+/** How the wave lifts a building, on the same terms as a band does. */
+const WAVE_LIFT_METRES = 60
+const WAVE_LIFT_RATIO = 1
+
+/**
+ * Recent beat energy, sampled once a frame, so a building at any distance can
+ * read what the beat was when the wave passing it now left the centre.
+ */
+const createEnergyHistory = () => {
+  // The wave takes 1.2 s to cross its reach; this many frames covers that
+  // with room to spare even at 240 fps.
+  const size = 1024
+  const times = new Float64Array(size)
+  const energies = new Float32Array(size)
+  let newest = -1
+  let length = 0
+
+  return {
+    push: (time: number, energy: number) => {
+      newest = (newest + 1) % size
+      times[newest] = time
+      energies[newest] = energy
+      length = Math.min(size, length + 1)
+    },
+    /** The energy as of `time`, or the oldest sample if it reaches back further. */
+    at: (time: number) => {
+      for (let step = 0; step < length; step += 1) {
+        const index = (newest - step + size) % size
+        if ((times[index] ?? 0) <= time) return energies[index] ?? 0
+      }
+      return length === 0 ? 0 : (energies[(newest - length + 1 + size) % size] ?? 0)
+    },
+    clear: () => {
+      newest = -1
+      length = 0
+    },
+  }
+}
+
+/**
+ * The beat energy reaching each ring of `WAVE_RING_METRES` out from the
+ * centre, rebuilt once a frame so every building in a ring shares one lookup.
+ */
+const WAVE_RING_METRES = 10
+const WAVE_RINGS = Math.ceil(WAVE_REACH_METRES / WAVE_RING_METRES) + 1
+
+/**
+ * Turns the travelling beat into a building-height function. As in band mode,
+ * every building keeps its real height at rest and grows up from the ground.
+ * Buildings past the reach, or with no known position, ride the outermost
+ * ring, as everything past the last layer does in the maplibre version.
+ */
+const waveHeights =
+  (
+    rings: Readonly<Float32Array>,
+    center: Readonly<Vector3>,
+    now: number,
+  ): BuildingHeights =>
+  (renderHeight, minHeight, position) => {
+    const distance = position
+      ? Math.hypot(
+          position.x - center.x,
+          position.y - center.y,
+          position.z - center.z,
+        )
+      : WAVE_REACH_METRES
+    const ring = Math.min(WAVE_RINGS - 1, Math.floor(distance / WAVE_RING_METRES))
+    const energy = rings[ring] ?? 0
+    const ripple =
+      Math.sin(
+        now / RIPPLE_MS_PER_RADIAN -
+          (distance / RIPPLE_WAVELENGTH_METRES) * 2 * Math.PI,
+      ) * RIPPLE_SHARE
+    const resting = Math.max(renderHeight, minHeight + MIN_BUILDING_HEIGHT)
+    const lift = WAVE_LIFT_METRES + resting * WAVE_LIFT_RATIO
+    return {
+      height: minHeight,
+      extrudedHeight: resting + lift * Math.max(0, energy * (1 + ripple)),
+    }
+  }
+
 export type Visualizer = {
   start: () => void
   stop: () => void
   /** Pauses the animation until `work` settles, so camera moves are not fought. */
   suspendWhile: <T>(work: Promise<T>) => Promise<T>
+  /** Whether the buildings ripple out from the centre instead of dancing by band. */
+  readonly waveMode: boolean
+  setWaveMode: (enabled: boolean) => void
 }
 
 /** Drives the scene from the audio spectrum, one update per animation frame. */
@@ -129,6 +233,9 @@ export const createVisualizer = (
   /** Heading the orbit started from, and when — so playback does not snap the camera. */
   let orbitFrom = 0
   let orbitStartedAt: number | null = null
+  let waveMode = false
+  const energyHistory = createEnergyHistory()
+  const waveRings = new Float32Array(WAVE_RINGS)
 
   const draw = (now: DOMHighResTimeStamp) => {
     frame = requestAnimationFrame(draw)
@@ -164,7 +271,19 @@ export const createVisualizer = (
       approach(elapsed, punch > glow ? GLOW_ATTACK_MS : GLOW_DECAY_MS)
     const hue = (now / HUE_MS_PER_DEGREE) % 360
 
-    scene.setBuildingHeights(liftedHeights(levels))
+    if (waveMode) {
+      let energy = 0
+      for (let band = 0; band < WAVE_BANDS; band += 1) energy += levels[band] ?? 0
+      energyHistory.push(now, energy / WAVE_BANDS)
+      for (let ring = 0; ring < WAVE_RINGS; ring += 1) {
+        waveRings[ring] = energyHistory.at(
+          now - (ring * WAVE_RING_METRES) / WAVE_SPEED_METRES_PER_MS,
+        )
+      }
+      scene.setBuildingHeights(waveHeights(waveRings, scene.orbitCenter(), now))
+    } else {
+      scene.setBuildingHeights(liftedHeights(levels))
+    }
     // The whole layer glows together: bloom reads one emissive buffer, so the
     // per-band difference stays in the heights rather than the light.
     scene.setBuildingGlow({
@@ -205,6 +324,7 @@ export const createVisualizer = (
       lastFrameAt = null
       orbitStartedAt = null
       levels.fill(0)
+      energyHistory.clear()
       smoothedAverage = 0
       glowBaseline = 0
       glow = 0
@@ -213,6 +333,17 @@ export const createVisualizer = (
       scene.setBuildingHeights(realBuildingHeights)
       scene.setBuildingGlow({ color: glowColor, intensity: 0 })
       scene.resetFillLight()
+    },
+
+    get waveMode() {
+      return waveMode
+    },
+
+    setWaveMode: (enabled) => {
+      waveMode = enabled
+      // Start the wave from a still centre rather than replaying the beat
+      // from the last time wave mode was on.
+      energyHistory.clear()
     },
 
     suspendWhile: async (work) => {
