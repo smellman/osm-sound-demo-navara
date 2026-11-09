@@ -11,10 +11,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@navaramap/three": "^0.2.1",
-    "@navaramap/three-default-descs": "0.2.1",
-    "@navaramap/three-default-plugin": "^0.2.1",
-    "@navaramap/three-plugins": "^0.2.1",
+    "@navaramap/three": "^0.3.0",
+    "@navaramap/three-default-descs": "0.3.0",
+    "@navaramap/three-default-plugin": "^0.3.0",
+    "@navaramap/three-plugins": "^0.3.0",
     "@popperjs/core": "^2.11.8",
     "bootstrap": "^5.3.8",
     "bootstrap-icons": "^1.13.2",
@@ -23,8 +23,8 @@
   },
   "devDependencies": {
     "@types/three": "^0.187.0",
-    "sass": "^1.107.1",
+    "sass": "^1.108.1",
     "typescript": "^7.0.2",
-    "vite": "^8.3.5"
+    "vite": "^8.3.6"
   }
 }
