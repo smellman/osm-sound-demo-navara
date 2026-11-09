@@ -71,6 +71,13 @@ const GLOW_SATURATION = 95
 const GLOW_LIGHTNESS = 55
 
 /**
+ * How loud the music has to get before the water is at its roughest. The
+ * smoothed average measures 0.39 at its median and 0.54 at its loudest, so
+ * this puts a busy passage near the top of the range without pinning there.
+ */
+const CHOP_AT_FULL_LEVEL = 0.5
+
+/**
  * Time constants of the per-band envelope, in milliseconds. The short attack
  * lets a beat throw the buildings up; the longer release lets them sink back
  * down, so the motion reads as growth from the ground rather than a jitter.
@@ -284,6 +291,9 @@ export const createVisualizer = (
     } else {
       scene.setBuildingHeights(liftedHeights(levels))
     }
+    // The water takes the smoothed average rather than the beat: a river
+    // builds and settles over a passage, it does not flinch on every kick.
+    scene.setWaterChop(Math.min(1, smoothedAverage / CHOP_AT_FULL_LEVEL))
     // The whole layer glows together: bloom reads one emissive buffer, so the
     // per-band difference stays in the heights rather than the light.
     scene.setBuildingGlow({
@@ -332,6 +342,7 @@ export const createVisualizer = (
       // Back to the city as it really is.
       scene.setBuildingHeights(realBuildingHeights)
       scene.setBuildingGlow({ color: glowColor, intensity: 0 })
+      scene.setWaterChop(0)
       scene.resetFillLight()
     },
 

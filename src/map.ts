@@ -118,6 +118,28 @@ const BLOOM = {
 } as const
 
 /**
+ * The water layer. OpenMapTiles' `water` covers rivers, moats and bays rather
+ * than open ocean, so the wave scale is capped at the body of water a city
+ * actually has; `ocean` would roll swell up the Sumida.
+ *
+ * The waves only advance while frames are rendered, which here means while
+ * something is playing — so the water is a still mirror on the idle map and
+ * comes alive with the music, the same bargain the buildings make.
+ */
+const WATER = {
+  /** Slab thickness, in metres: enough to clear the draped land under it. */
+  slabHeight: 0.5,
+  scale: 'medium',
+  /** `waveStrength` with nothing playing, and at a full beat. */
+  calmWaves: 1,
+  loudWaves: 14,
+  /** Metres per second the current carries the waves north. */
+  flowSpeed: 0.4,
+  /** Camera zoom the material switches on at; see `syncWaterToZoom`. */
+  minZoom: 12,
+} as const
+
+/**
  * Colours for Navara's built-in attribution UI, so its popover matches the
  * demo's dark Bootstrap theme instead of its own light default. The credits
  * themselves come from the TileJSON, via `TileJsonPlugin`.
@@ -250,6 +272,11 @@ export type MapScene = {
   setBuildingHeights: (heights: BuildingHeights) => void
   /** How the buildings glow into the bloom. Intensity 0 is off. */
   setBuildingGlow: (glow: { color: Color; intensity: number }) => void
+  /**
+   * How rough the water runs, from 0 (a still mirror) to 1 (whipped up). The
+   * visualizer drives it from the music; `stop` puts it back to 0.
+   */
+  setWaterChop: (level: number) => void
   /** Tints the scene's fill light, as the original demo does with `map.setLight`. */
   setFillLight: (light: { color: Color; intensity: number }) => void
   /** Restores the fill light the map opens with. */
@@ -339,12 +366,51 @@ export const createMapScene = async (
     sourceLayers: ['park'],
     polygon: { color: color(PALETTE.park), clampToGround: true },
   })
+  // The flat fill the map has always had, kept as the far-away and fallback
+  // look for water.
   view.addLayer({
     type: 'vector',
     source: tiles,
     sourceLayers: ['water'],
     polygon: { color: color(PALETTE.water), clampToGround: true },
   })
+  // Over it, Navara 0.3's water material: rivers and bays that catch the sky
+  // and the sun, with waves that travel. It has to be extruded rather than
+  // draped, because a draped polygon bakes into the tile texture and never
+  // reaches the lit shader — a thin slab keeps it off the ground plane
+  // without z-fighting the land under it.
+  const water = view.addLayer({
+    type: 'vector',
+    source: tiles,
+    sourceLayers: ['water'],
+    polygon: {
+      color: color(PALETTE.water),
+      clampToGround: false,
+      height: 0,
+      extrudedHeight: WATER.slabHeight,
+      water: true,
+      waterScale: WATER.scale,
+      waveStrength: WATER.calmWaves,
+      flowSpeed: WATER.flowSpeed,
+      show: false,
+    },
+  })
+
+  /**
+   * Lit water is a city-scale effect. Seen from orbit the oceans are a single
+   * sheet of sky reflection, which turns the dark globe into a pale grey ball,
+   * so the material only comes on once the camera is down among the rivers;
+   * above that the draped fill underneath is all that shows.
+   */
+  let waterLit = false
+  const syncWaterToZoom = () => {
+    const lit = (view.camera.zoom ?? 0) >= WATER.minZoom
+    if (lit === waterLit) return
+    waterLit = lit
+    water.update({ polygon: { show: lit } })
+  }
+  view.on('postRender', syncWaterToZoom)
+
   view.addLayer({
     type: 'vector',
     source: tiles,
@@ -450,6 +516,14 @@ export const createMapScene = async (
       if (intensity > 0) ensureBloom()
       buildings.update({
         polygon: { emissiveColor: glowColor, emissiveIntensity: intensity },
+      })
+    },
+    setWaterChop: (level) => {
+      water.update({
+        polygon: {
+          waveStrength:
+            WATER.calmWaves + (WATER.loudWaves - WATER.calmWaves) * level,
+        },
       })
     },
 

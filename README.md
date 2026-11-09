@@ -10,7 +10,7 @@ Navara's own vector materials, and the buildings are extruded per feature from
 `render_height` / `render_min_height` — the properties the maplibre-gl version
 feeds into `fill-extrusion-height`.
 
-Navara 0.2 does ship an experimental `MapLibreStylePlugin` that reads a MapLibre
+Navara does ship an experimental `MapLibreStylePlugin` that reads a MapLibre
 Style JSON, and the demo's original style renders through it. It is not used:
 see the note at the end.
 
@@ -36,6 +36,8 @@ Implemented:
   hue sweep is passing through
 - Screen-space ambient occlusion, so the city reads as blocks rather than a
   field of flat panels
+- Rivers and bays on Navara's water material, lit and with travelling waves
+  that get rougher the louder the music is
 - VJ mode: the visualizer runs off a live audio input and the interface gets
   out of the way, so the map can be projected
 
@@ -92,7 +94,7 @@ connection.
 
 - `@navaramap/three` inlines three's core into its own bundle, so the console
   shows a `THREE.WARNING: Multiple instances of Three.js being imported` on
-  startup. It is upstream, still present in 0.2.1, and does not affect
+  startup. It is upstream, still present in 0.3.0, and does not affect
   rendering.
 - The building layer takes a while to fully populate on first load: the vector
   tileset maxes out at zoom 14 and the building geometry is the heaviest part
@@ -140,11 +142,19 @@ connection.
 - Screen-space reflections were tried and dropped. With the buildings given a
   reflectivity, the pass changed exactly zero pixels at both the demo's camera
   and a street-level one.
+- The water is two layers over the same source. Navara's water material only
+  reaches the lit shader on a polygon that is *not* draped — a draped one bakes
+  into the tile texture — so the lit water is a thin extruded slab, and the old
+  draped fill stays underneath it. The slab is only shown from zoom 12 up:
+  seen from orbit every ocean becomes one sheet of sky reflection and the dark
+  globe turns into a pale grey ball. Waves also only advance while frames are
+  being rendered, which in this demo means while something is playing, so the
+  idle map gets a still mirror for free.
 - `depthOfField` cannot be used: Navara's wrapper builds the underlying
   `DepthOfFieldEffect` without passing the camera, so every frame throws
   `Cannot read properties of null (reading 'elements')`. `addEffect` itself
   succeeds, which makes it look like a scene problem rather than a one-line
-  upstream bug.
+  upstream bug. Still the case in 0.3.0.
 - The experimental `MapLibreStylePlugin` works — the demo's original
   `maptiler-toner-ja` style renders, labels and all — but is not used here. It
   needs `text-font` rewritten as `["literal", [...]]`, cannot read the legacy
@@ -152,9 +162,10 @@ connection.
   must be supplied by hand, and keeps its sources private, which means a second
   copy of the same tileset. The hand-written dark palette is also the look this
   demo wants.
-- `.claude/skills/navara-usage/` is a copy of the
-  [navara-usage skill](https://github.com/maplibre/navara/tree/main/skills/navara-usage)
-  from the Navara repository, for AI coding agents working on this project.
+- `.claude/skills/navara-usage/` is a copy of the navara-usage skill, for AI
+  coding agents working on this project. Since 0.3.0 the skill ships inside the
+  package, so refreshing it is
+  `cp -R node_modules/@navaramap/three/skills/navara-usage .claude/skills/`.
 
 ## License of the code
 
